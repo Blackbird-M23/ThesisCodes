@@ -77,7 +77,7 @@ def apply_disaster_scenario(nodes_df, links_df, blocked_df):
 
     # 2. Process Blocked Links
     # We need to map the user's blocked links to the graph edges
-    #blocked_edges = []
+    # blocked_edges = []
 
     # Helper to check if edge exists in CSV
     # We use a set for faster lookup of (u, v) pairs
@@ -89,13 +89,13 @@ def apply_disaster_scenario(nodes_df, links_df, blocked_df):
         repair_time = float(row['RepairTime'])
 
         key = tuple(sorted((u, v)))
-        user_blocks.add(key) #user_defined_blocks
+        user_blocks.add(key)  # user_defined_blocks
         block_info[key] = repair_time
 
     # 3. Remove Blocked Links to define Components
     # We iterate over the graph's edges and remove those in the block list
     G_broken = G.copy()
-    actual_blocked_links = []  #LIST
+    actual_blocked_links = []  # LIST
 
     for u, v in list(G.edges()):
         key = tuple(sorted((u, v)))
@@ -115,10 +115,10 @@ def apply_disaster_scenario(nodes_df, links_df, blocked_df):
 
     # 4. Identify Components (Islands)
     components = list(nx.connected_components(G_broken))
-    node_comp_map = {} # set of node component for mapping
+    node_comp_map = {}  # set of node component for mapping
     for comp_id, nodes in enumerate(components):
         for node in nodes:
-            node_comp_map[node] = comp_id # node component map holds the component ID of the node that it belongs to
+            node_comp_map[node] = comp_id  # node component map holds the component ID of the node that it belongs to
 
     print(f"Disaster Scenario Applied: Graph broken into {len(components)} components.")
     # print components/islands
@@ -339,7 +339,7 @@ class ModifiedACO:
 
         self.base = base_node
         self.artificial_base_comp_id = -1
-        
+
         # Pre-calculate Base -> Boundary Distances (Travel Time only)
         # Using intact graph (G_full)
         lengths, _ = nx.single_source_dijkstra(self.G_full, self.base, weight='weight')
@@ -359,14 +359,13 @@ class ModifiedACO:
                     h = 1.0 / (ts + 0.001) if ts < float('inf') else 0.0
                     self.heuristics[(i, j)] = h
                     self.pheromones[(i, j)] = 0.5  # Init pheromone
-        
+
         # 2. Base -> Boundary (One-way for selection)
         for bn in self.nodes:
             ts = self.base_dists[bn]
             h = 1.0 / (ts + 0.001) if ts < float('inf') else 0.0
             self.heuristics[(self.base, bn)] = h
             self.pheromones[(self.base, bn)] = 0.5
-
 
     def _select_next(self, curr, visited_comps):
         # Build probabilities
@@ -383,23 +382,23 @@ class ModifiedACO:
 
         for node in targets:
             if node == curr: continue
-##           # if node == self.base:
-##           #     continue
+            if node == self.base:
+                continue
 
             target_comp = self.comp_map[node]
             if target_comp not in visited_comps:
-                
+
                 # Fetch Pheromone & Heuristic
                 if curr == self.base:
-                     ph = self.pheromones.get((self.base, node), 0.1)
-                     he = self.heuristics.get((self.base, node), 0.0001)
+                    ph = self.pheromones.get((self.base, node), 0.1)
+                    he = self.heuristics.get((self.base, node), 0.0001)
                 else:
-                     # Validate connectivity in reduced graph
-                     if (curr, node) not in self.dist_matrix:
-                         continue
-                     ph = self.pheromones.get((curr, node), 0.1)
-                     he = self.heuristics.get((curr, node), 0.0001)
-                
+                    # Validate connectivity in reduced graph
+                    if (curr, node) not in self.dist_matrix:
+                        continue
+                    ph = self.pheromones.get((curr, node), 0.1)
+                    he = self.heuristics.get((curr, node), 0.0001)
+
                 weight = (ph ** self.alpha) * (he ** self.beta)
 
                 candidates.append(node)
@@ -411,11 +410,12 @@ class ModifiedACO:
         total = sum(weights)
         if total == 0: return random.choice(candidates)
         probs = [w / total for w in weights]
-        return random.choices(candidates, weights=probs, k=1)[0]  # through choosing between the probs we are choosing a candidates
+        return random.choices(candidates, weights=probs, k=1)[
+            0]  # through choosing between the probs we are choosing a candidates
 
     def construct_solution(self):
         # Each ant starts at base
-        pos = [self.base] * self.m  #All ants start from base , just a normal LIST
+        pos = [self.base] * self.m  # All ants start from base , just a normal LIST
         times = [0.0] * self.m  # Time spent by each ant
         routes = [[self.base] for _ in range(self.m)]  # A LIST of LISTS
 
@@ -428,7 +428,7 @@ class ModifiedACO:
         while len(visited_comps) < len(all_real_comps) + 1:
 
             # Identify valid moves for ALL ants
-            moves = [] #This will store all valid moves ants can make at this step.
+            moves = []  # This will store all valid moves ants can make at this step.
 
             for ant_idx in range(self.m):
                 curr_node = pos[ant_idx]
@@ -465,13 +465,14 @@ class ModifiedACO:
                         'char': char_val
                     })
 
-            if not moves: break # If no ant cant find the next node to go to -> moves list will be empty after all the iteration → stop
+            if not moves: break  # If no ant cant find the next node to go to -> moves list will be empty after all the iteration → stop
 
             # Probabilistic selection of WHICH ANT moves
             total_char = sum(m['char'] for m in moves)
             probs = [m['char'] / total_char for m in moves]
 
-            choice = random.choices(moves, weights=probs, k=1)[0]  # through choosing between the probs we are choosing a move
+            choice = random.choices(moves, weights=probs, k=1)[
+                0]  # through choosing between the probs we are choosing a move
             # only one ant move each iteration NOT all the ants
 
             # Apply Move
@@ -479,7 +480,7 @@ class ModifiedACO:
             target = choice['target']
 
             pos[ant] = target  # current position of ant after the move
-            routes[ant].append(target) # adding the new position of that chosen ant
+            routes[ant].append(target)  # adding the new position of that chosen ant
 
             # Update Time
             cost = choice['ts'] + (choice['tr'] if self.scenario == 2 else 0)
@@ -491,7 +492,7 @@ class ModifiedACO:
         # Return to base logic (FORCED)
         for i in range(self.m):
             curr = pos[i]
-            
+
             if curr == self.base:
                 ts = 0.0
                 tr = 0.0
@@ -499,7 +500,7 @@ class ModifiedACO:
                 # Return cost: Base Dist from current node + 0 repair
                 ts = self.base_dists[curr]
                 tr = 0.0
-            
+
             routes[i].append(self.base)
             cost = ts + (tr if self.scenario == 2 else 0)
             times[i] += cost
@@ -511,6 +512,11 @@ class ModifiedACO:
         # Init best times with infinity
         best_times = [float('inf')] * self.m
         best_times_sorted = [float('inf')] * self.m
+
+        # MMAS Constants
+        Q = 100.0
+        TAU_MIN = 0.01
+        TAU_MAX = 1.0
 
         for _ in range(iterations):
             # Run colony (10 ants/solutions per iter)
@@ -528,26 +534,66 @@ class ModifiedACO:
                 best_routes = batch_routes
                 best_times = batch_times
 
-            # Pheromone Update (Simplistic MMAS)
-            # Evaporate
+            # ==========================================
+            # MMAS Pheromone Update Logic
+            # ==========================================
+
+            # 1. Evaporation (Apply to ALL edges first)
             for k in self.pheromones:
                 self.pheromones[k] *= (1.0 - self.rho)
 
-            # Deposit on Batch Best
-            reward = 100.0 / (sum(batch_times) + 1.0)
-            for r in batch_routes:
+            # 2. Selection Strategy (Global vs Iteration Best)
+            # 50% probability for each. If global best not found yet (should be set), use batch.
+            selected_routes = None
+            selected_times = None
+
+            if best_routes is None:
+                selected_routes = batch_routes
+                selected_times = batch_times
+            else:
+                if random.random() < 0.5:
+                    selected_routes = best_routes
+                    selected_times = best_times
+                else:
+                    selected_routes = batch_routes
+                    selected_times = batch_times
+
+            # 3. Deposit Step
+            # L_selected = total completion time of selected solution
+            L_selected = sum(selected_times)
+
+            # Avoid division by zero
+            delta_tau = Q / (L_selected + 1e-6)
+
+            for r in selected_routes:
                 for i in range(len(r) - 1):
+                    u, v = r[i], r[i + 1]
 
-                    key = (r[i], r[i + 1])
+                    # IMPORTANT: Do NOT deposit on edges involving base
+                    if u == self.base or v == self.base:
+                        continue
+
+                    # Update pheromone on edge (u, v) and symmetric (v, u)
+                    # Check existence to avoid key errors (though keys should exist for boundary nodes)
+                    key = (u, v)
                     if key in self.pheromones:
-                        self.pheromones[key] += reward
-##                    # if r[i] != self.base and r[i + 1] != self.base:
-##                    #     self.pheromones[(r[i], r[i + 1])] += reward
+                        self.pheromones[key] += delta_tau
 
-                    # Undirected pheromone update
-                    key_rev = (r[i + 1], r[i])
+                    key_rev = (v, u)
                     if key_rev in self.pheromones:
-                        self.pheromones[key_rev] += reward
+                        self.pheromones[key_rev] += delta_tau
+
+            # 4. MMAS Clamping
+            for k in self.pheromones:
+                if self.pheromones[k] < TAU_MIN:
+                    self.pheromones[k] = TAU_MIN
+                elif self.pheromones[k] > TAU_MAX:
+                    self.pheromones[k] = TAU_MAX
+                    # 5. MMAS Clamping
+                    # Ensure pheromones are within bounds
+                    # This is a safety check to prevent pheromones from going out of bounds
+                    # It should not be necessary if rho is properly set
+                    # self.pheromones[k] = max(TAU_MIN, min(TAU_MAX, self.pheromones[k]))
 
         return best_routes, best_times
 
@@ -623,7 +669,7 @@ if __name__ == "__main__":
         # Calculate repair cost
         repair_cost = 0
         for idx in range(len(r) - 1):
-            u, v = r[idx], r[idx+1]
+            u, v = r[idx], r[idx + 1]
             if (u, v) in dist_matrix:
                 _, tr = dist_matrix[(u, v)]
             else:
@@ -641,7 +687,7 @@ if __name__ == "__main__":
         # Calculate repair cost
         repair_cost = 0
         for idx in range(len(r) - 1):
-            u, v = r[idx], r[idx+1]
+            u, v = r[idx], r[idx + 1]
             if (u, v) in dist_matrix:
                 _, tr = dist_matrix[(u, v)]
             else:
