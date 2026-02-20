@@ -17,3 +17,6 @@ __pycache__/
 logs/
 results/
 *.log
+
+# Ignore local C++ experiments
+CPP/
