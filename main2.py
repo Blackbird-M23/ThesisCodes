@@ -3,6 +3,8 @@ import networkx as nx
 import random
 
 
+# .\.venv\Scripts\Activate.ps1  : activate
+
 # ==========================================
 # 1. DATA LOADING
 # ==========================================
@@ -507,7 +509,7 @@ class ModifiedACO:
 
         return routes, times
 
-    def run(self, iterations=100):
+    def run(self, iterations=100, num_of_colonies = 30):
         best_routes = None
         # Init best times with infinity
         best_times = [float('inf')] * self.m
@@ -520,7 +522,7 @@ class ModifiedACO:
 
         for _ in range(iterations):
             # Run colony (10 ants/solutions per iter)
-            iter_solutions = [self.construct_solution() for _ in range(10)]
+            iter_solutions = [self.construct_solution() for _ in range(num_of_colonies)]
 
             # Find best in this batch (Lexicographical Min)
             # Sort times desc: [max_time, 2nd_max, ...]
@@ -662,7 +664,7 @@ if __name__ == "__main__":
 
     print("\n--- Running Scenario 1 (No Repair Cost) ---")
     aco1 = ModifiedACO(boundary_nodes, dist_matrix, comp_map, NUM_UNITS, base_node=base_node, G_full=G_full, scenario=1)
-    routes1, times1 = aco1.run(iterations=100)
+    routes1, times1 = aco1.run(iterations=100, num_of_colonies = 30)
 
     print("\nResults Scenario 1:")
     for i, (r, t) in enumerate(zip(routes1, times1)):
@@ -680,7 +682,7 @@ if __name__ == "__main__":
 
     print("\n--- Running Scenario 2 (With Repair Cost) ---")
     aco2 = ModifiedACO(boundary_nodes, dist_matrix, comp_map, NUM_UNITS, base_node=base_node, G_full=G_full, scenario=2)
-    routes2, times2 = aco2.run(iterations=200)
+    routes2, times2 = aco2.run(iterations=100, num_of_colonies = 30)
 
     print("\nResults Scenario 2:")
     for i, (r, t) in enumerate(zip(routes2, times2)):
