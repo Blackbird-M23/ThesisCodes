@@ -248,86 +248,6 @@ def build_reduced_graph(G_full, blocked_links, node_comp_map):
     return boundary_nodes, dist_matrix
 
 
-# def build_reduced_graph(G_full, blocked_links_info, node_comp_map):
-#     """
-#     Builds the complete graph of boundary nodes.
-#     Calculates TS (Travel Time) and TR (Repair Cost) using shortest paths.
-#     """
-#     # 1. Identify Boundary Nodes
-#     boundary_nodes = set()
-#
-#     # Identify which links are actually bridges between components
-#     # (Some blocked links might be inside a component if redundancy exists,
-#     # but strictly speaking, the paper focuses on links connecting components)
-#
-#     for link in blocked_links_info:
-#         u, v = link['u'], link['v']
-#         comp_u = node_comp_map.get(u)
-#         comp_v = node_comp_map.get(v)
-#
-#         # Only treat as boundary if they connect DIFFERENT components
-#         if comp_u is not None and comp_v is not None and comp_u != comp_v:  # checks if u and v belongs to a component and the component they belong to are different
-#             boundary_nodes.add(u)
-#             boundary_nodes.add(v)
-#
-#     boundary_nodes = list(boundary_nodes)
-#
-#     # 2. Build Distance Matrix (TS and TR)
-#     # We calculate shortest path on the FULL graph (including blocked links with penalties)
-#     # to find the optimal path between boundaries.
-#
-#     # Construct a traversal graph where blocked links exist but have properties
-#     G_traversal = G_full.copy()
-#
-#     # Mark blocked edges in G_traversal
-#     blocked_lookup = {tuple(sorted((x['u'], x['v']))): x['repair_time'] for x in blocked_links_info}
-#     # This creates : (3,7) → repair_time, (5,9) → repair_time
-#
-#     # Nodes = boundary nodes
-#     # Edge (i,j) exists if a path exists between boundary nodes i and j in the original graph
-#     # Each reduced edge has:
-#     # TSᵢⱼ = sum of travel times along shortest path
-#     # TRᵢⱼ = sum of repair times of damaged links on that path
-#
-#     dist_matrix = {}
-#
-#     for start_node in boundary_nodes:
-#         # We compute Dijkstra weighted by TRAVEL TIME only initially to find shortest geometric path
-#         # (The paper implies shortest physical path is used, then costs are summed)
-#         # Shortest path is determined by travel time only; repair times are accumulated afterwards.
-#         lengths, paths = nx.single_source_dijkstra(G_traversal, start_node, weight='weight')
-#
-#         for end_node in boundary_nodes:
-#             if start_node == end_node:
-#                 dist_matrix[(start_node, end_node)] = (0, 0)
-#                 continue
-#
-#             if end_node not in paths:
-#                 continue
-#
-#             path = paths[end_node]
-#
-#             # Calculate TS (Travel Time) and TR (Repair Time) for this path
-#             total_ts = 0
-#             total_tr = 0
-#
-#             for i in range(len(path) - 1):
-#                 u, v = path[i], path[i + 1]
-#                 edge_data = G_traversal.get_edge_data(u, v)
-#
-#                 # TS
-#                 total_ts += edge_data.get('weight', 1)
-#
-#                 # TR - Check if this specific link is blocked
-#                 edge_key = tuple(sorted((u, v)))
-#                 if edge_key in blocked_lookup:
-#                     total_tr += blocked_lookup[edge_key]
-#
-#             dist_matrix[(start_node, end_node)] = (total_ts, total_tr)
-#
-#     return boundary_nodes, dist_matrix
-
-
 def get_full_path(G_full, route):
     """
     Expands a route of boundary nodes into a full path through the intact network.
@@ -383,12 +303,14 @@ class ModifiedACO:
         # -------------------------------
         # Heuristic Initialization
         # -------------------------------
+        # 1. Boundary <-> Boundary: h_ij = 1 / (TS_ij + epsilon)
         for i in self.nodes:
             for j in self.nodes:
                 if i != j and (i, j) in self.dist_matrix:
                     ts, _ = self.dist_matrix[(i, j)]
                     self.heuristics[(i, j)] = 1.0 / (ts + 0.001)
 
+        # 2. Base → Boundary: h_0j = 1 / (TS_0j + epsilon)
         for bn in self.nodes:
             ts = self.base_dists[bn]
             self.heuristics[(self.base, bn)] = 1.0 / (ts + 0.001)
@@ -396,6 +318,9 @@ class ModifiedACO:
         # -------------------------------
         # Savings Initialization
         # -------------------------------
+        # We use the robust version of the savings algorithm to get an initial solution.
+        # This provides us with a good starting point for the ACO and allows us to initialize pheromones based on a reasonable solution quality.
+
         init_routes, init_times = self.savings_init()
 
         self.best_routes = init_routes
@@ -425,27 +350,34 @@ class ModifiedACO:
     # SAVINGS ALGORITHM (Robust Version from Implementation A)
     # ==========================================================
     def savings_init(self):
+        # It returns 2 things:
+        # final_routes: list of routes (one route per repair unit after merging)
+        # route_times: total travel time for each route (used for ACO initialization)
 
+        # For every boundary node, create a tiny route: base → node → base
         routes = {node: [self.base, node, self.base] for node in self.nodes}
+        #Tracks which route each node currently belongs to. Initially, each node is in its own route.
         node_route_map = {node: node for node in self.nodes}
 
         savings = []
 
         for i in self.nodes:
             for j in self.nodes:
+                # Skip same node and non-existent edges in reduced graph
                 if i == j:
                     continue
                 if (i, j) not in self.dist_matrix:
                     continue
-
+                # distance from base to i and j
                 d0i = self.base_dists[i]
                 d0j = self.base_dists[j]
+                # distance between i and j in reduced graph (travel time only)
                 dij = self.dist_matrix[(i, j)][0]
 
                 Sij = d0i + d0j - dij
                 savings.append((Sij, i, j))
 
-        savings.sort(reverse=True, key=lambda x: x[0])
+        savings.sort(reverse=True, key=lambda x: x[0]) # we will consider Highest savings value first (best merges first).
 
         for Sij, i, j in savings:
 
@@ -457,21 +389,27 @@ class ModifiedACO:
 
             ri = routes[ri_id]
             rj = routes[rj_id]
-
-            if ri[-2] == i and rj[1] == j:
-                merged = ri[:-1] + rj[1:]
+            # condition :
+            # i must be at the end of its route (before base) and
+            # j must be at the start of its route (after base) to merge them without creating loops
+            if ri[-2] == i and rj[1] == j: # example: route_i = [0, 5, 0] and route_j = [0, 8, 0] and we want to merge on i=5 and j=8 → merged = [0, 5, 8, 0]
+                merged = ri[:-1] + rj[1:] # removing the last base from route_i and the first base from route_j, then concatenating them.
 
                 routes[ri_id] = merged
                 del routes[rj_id]
 
                 for node in merged:
-                    if node != self.base:
+                    if node != self.base: # the base node is not part of the mapping since it's not a boundary node, we only map the boundary nodes to their route IDs
                         node_route_map[node] = ri_id
 
             if len(routes) <= self.m:
                 break
 
         final_routes = list(routes.values())
+        print(f"Savings initialization produced {len(final_routes)} routes.")
+        print("Initial routes from Savings:")
+        for r in final_routes:
+            print(r)
 
         while len(final_routes) > self.m:
             r1 = final_routes.pop()
@@ -1299,37 +1237,4 @@ if __name__ == "__main__":
     # Convert the NumPy values to standard Python floats for a cleaner print
     clean_times = [float(t) for t in sorted(times2, reverse=True)]
     print(f"Sorted Times: {clean_times}")
-
-    # print("\nResults Scenario 1:")
-    # for i, (r, t) in enumerate(zip(routes1, times1)):
-    #     # Calculate repair cost
-    #     repair_cost = 0
-    #     for idx in range(len(r) - 1):
-    #         u, v = r[idx], r[idx + 1]
-    #         if (u, v) in dist_matrix:
-    #             _, tr = dist_matrix[(u, v)]
-    #         else:
-    #             tr = 0
-    #         repair_cost += tr
-    #     print(f"Unit {i + 1}: Time {t:.2f}, Repair Cost {repair_cost:.2f}, Route: {r}")
-    # print(f"Sorted Times: {sorted(times1, reverse=True)}")
-    #
-    # print("\n--- Running Scenario 2 (With Repair Cost) ---")
-    # aco2 = ModifiedACO(boundary_nodes, dist_matrix, comp_map, NUM_UNITS, base_node=base_node, G_full=G_full, scenario=2)
-    # routes2, times2 = aco2.run(iterations=100, num_of_colonies = 30)
-    #
-    # print("\nResults Scenario 2:")
-    # for i, (r, t) in enumerate(zip(routes2, times2)):
-    #     # Calculate repair cost
-    #     repair_cost = 0
-    #     for idx in range(len(r) - 1):
-    #         u, v = r[idx], r[idx + 1]
-    #         if (u, v) in dist_matrix:
-    #             _, tr = dist_matrix[(u, v)]
-    #         else:
-    #             tr = 0
-    #         repair_cost += tr
-    #     print(f"Unit {i + 1}: Time {t:.2f}, Repair Cost {repair_cost:.2f}, Route: {r}")
-    # print(f"Sorted Times: {sorted(times2, reverse=True)}")
-
 
